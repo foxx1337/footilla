@@ -407,6 +407,15 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 	// Hard to cope when too narrow, so just assume there is space
 	constexpr int minimumWidth = 20;
 	width = std::max(width, minimumWidth);
+	// Reserve some usable text width at extreme nesting/zoom levels. Keep the
+	// rounded offset shared by painting and both coordinate-conversion paths.
+	const double insetLimit = width == LineLayout::wrapWidthInfinite ?
+		LineLayout::wrapWidthInfinite / 2.0 :
+		std::max(0.0, width - std::max<double>(minimumWidth, vstyle.spaceWidth * 4));
+	ll->visualInset = static_cast<int>(std::min(insetLimit,
+		std::round(model.LineInset(line) * static_cast<double>(vstyle.styles[StyleDefault].spaceWidth))));
+	if (width != LineLayout::wrapWidthInfinite)
+		width -= ll->visualInset;
 
 	if (ll->validity == LineLayout::ValidLevel::checkTextAndStyle) {
 		Sci::Position lineLength = posLineEnd - posLineStart;
@@ -645,7 +654,7 @@ Point EditView::LocationFromPosition(Surface *surface, const EditModel &model, S
 			const int caretPosition = posInLine - ll->LineStart(subLine);
 
 			// Get the point from current position
-			const ScreenLine screenLine(ll.get(), subLine, vs, rcClient.right, tabWidthMinimumPixels);
+			const ScreenLine screenLine(ll.get(), subLine, vs, rcClient.right - ll->visualInset, tabWidthMinimumPixels);
 			std::unique_ptr<IScreenLineLayout> slLayout = surface->Layout(&screenLine);
 			pt.x = slLayout->XFromPosition(caretPosition);
 
@@ -657,6 +666,7 @@ Point EditView::LocationFromPosition(Surface *surface, const EditModel &model, S
 			}
 		}
 		pt.y += static_cast<XYPOSITION>((lineVisible - topLine) * vs.lineHeight);
+		pt.x += ll->visualInset;
 		pt.x += pos.VirtualSpaceWidth(vs.styles[ll->EndLineStyle()].spaceWidth);
 	}
 	return pt;
@@ -708,6 +718,10 @@ SelectionPosition EditView::SPositionFromLocation(Surface *surface, const EditMo
 		if (subLine < ll->lines) {
 			const Range rangeSubLine = ll->SubLineRange(subLine, LineLayout::Scope::visibleOnly);
 			const XYPOSITION subLineStart = ll->positions[rangeSubLine.start];
+			pt.x -= ll->visualInset;
+			if (ll->visualInset && pt.x < 0) {
+				return SelectionPosition(canReturnInvalid ? Sci::invalidPosition : posLineStart + rangeSubLine.start);
+			}
 			if (subLine > 0)	// Wrapped
 				pt.x -= ll->wrapIndent;
 			Sci::Position positionInLine = 0;
@@ -715,7 +729,7 @@ SelectionPosition EditView::SPositionFromLocation(Surface *surface, const EditMo
 				// Fill the line bidi data
 				UpdateBidiData(model, vs, ll.get());
 
-				const ScreenLine screenLine(ll.get(), subLine, vs, rcClient.right, tabWidthMinimumPixels);
+				const ScreenLine screenLine(ll.get(), subLine, vs, rcClient.right - ll->visualInset, tabWidthMinimumPixels);
 				std::unique_ptr<IScreenLineLayout> slLayout = surface->Layout(&screenLine);
 				positionInLine = slLayout->PositionFromX(pt.x, charPosition) +
 					rangeSubLine.start;
@@ -758,6 +772,9 @@ SelectionPosition EditView::SPositionFromLineX(Surface *surface, const EditModel
 		LayoutLine(model, surface, vs, ll.get(), model.wrapWidth);
 		const Range rangeSubLine = ll->SubLineRange(0, LineLayout::Scope::visibleOnly);
 		const XYPOSITION subLineStart = ll->positions[rangeSubLine.start];
+		x -= ll->visualInset;
+		if (ll->visualInset && x <= 0)
+			return SelectionPosition(posLineStart);
 		const Sci::Position positionInLine = ll->FindPositionFromX(x + subLineStart, rangeSubLine, false);
 		if (positionInLine < rangeSubLine.end) {
 			return SelectionPosition(model.pdoc->MovePositionOutsideChar(positionInLine + posLineStart, 1));
@@ -1471,6 +1488,7 @@ void DrawBlockCaret(Surface *surface, const EditModel &model, const ViewStyle &v
 
 void EditView::DrawCarets(Surface *surface, const EditModel &model, const ViewStyle &vsDraw, const LineLayout *ll,
 	Sci::Line lineDoc, int xOrigin, PRectangle rcLine, int subLine) const {
+	xOrigin += ll->visualInset;
 	// When drag is active it is the only caret drawn
 	const bool drawDrag = model.posDrag.IsValid();
 	if (!vsDraw.selection.visible && !drawDrag)
@@ -1495,7 +1513,7 @@ void EditView::DrawCarets(Surface *surface, const EditModel &model, const ViewSt
 			XYPOSITION xposCaret = ll->positions[offset] + virtualOffset - ll->positions[ll->LineStart(subLine)];
 			if (model.BidirectionalEnabled() && (posCaret.VirtualSpace() == 0)) {
 				// Get caret point
-				const ScreenLine screenLine(ll, subLine, vsDraw, rcLine.right, tabWidthMinimumPixels);
+				const ScreenLine screenLine(ll, subLine, vsDraw, rcLine.right - ll->visualInset, tabWidthMinimumPixels);
 
 				const int caretPosition = offset - ll->LineStart(subLine);
 
@@ -1769,7 +1787,7 @@ void DrawTranslucentSelection(Surface *surface, const EditModel &model, const Vi
 				if (model.BidirectionalEnabled()) {
 					const SelectionSegment portionInSubLine = portionInLine.Subtract(lineRange.start);
 
-					const ScreenLine screenLine(ll, subLine, vsDraw, rcLine.right, tabWidthMinimumPixels);
+					const ScreenLine screenLine(ll, subLine, vsDraw, rcLine.right - ll->visualInset, tabWidthMinimumPixels);
 					std::unique_ptr<IScreenLineLayout> slLayout = surface->Layout(&screenLine);
 
 					if (slLayout) {
@@ -2366,6 +2384,20 @@ void EditView::DrawIndentGuidesOverEmpty(Surface *surface, const EditModel &mode
 void EditView::DrawLine(Surface *surface, const EditModel &model, const ViewStyle &vsDraw, const LineLayout *ll,
 	Sci::Line line, Sci::Line lineVisible, int xOrigin, PRectangle rcLine, int subLine, DrawPhase phase) {
 
+	if (ll->visualInset) {
+		const XYPOSITION insetRight = std::clamp<XYPOSITION>(
+			static_cast<XYPOSITION>(xOrigin + ll->visualInset), rcLine.left, rcLine.right);
+		if (FlagSet(phase, DrawPhase::back) && insetRight > rcLine.left) {
+			PRectangle padding = rcLine;
+			padding.left = std::max(padding.left, static_cast<XYPOSITION>(xOrigin));
+			padding.right = insetRight;
+			if (padding.right > padding.left)
+				surface->FillRectangleAligned(padding, Fill(vsDraw.styles[StyleLineNumber].back));
+		}
+		rcLine.left = insetRight;
+		xOrigin += ll->visualInset;
+	}
+
 	if (subLine >= ll->lines) {
 		DrawAnnotation(surface, model, vsDraw, ll, line, xOrigin, rcLine, subLine, phase);
 		return; // No further drawing
@@ -2595,7 +2627,7 @@ void EditView::PaintText(Surface *surfaceWindow, const EditModel &model, const V
 						surfaceWindow->Copy(rcCopyArea, from, *pixmapLine);
 					}
 
-					UpdateMaxWidth(ll->positions[ll->numCharsInLine]);
+					UpdateMaxWidth(ll->visualInset + ll->positions[ll->numCharsInLine]);
 #if defined(TIME_PAINTING)
 					durCopy += ep.Duration(true);
 #endif

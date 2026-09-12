@@ -26,6 +26,13 @@ const Function* FindFunction(std::string_view name);
 // Every position and style entry addresses a UTF-8 byte, not a Unicode character.
 std::vector<unsigned char> StyleText(std::string_view text);
 
+// One level per logical line (CRLF, LF or CR), including empty/trailing lines.
+// Counts calls, parentheses nested inside calls, and conditionals; leading
+// matching closers dedent. Quoted/field/comment delimiters and existing spaces
+// do not contribute. Text is never changed.
+// Throws std::length_error if nesting cannot be represented as int.
+std::vector<int> VisualIndentLevels(std::string_view text);
+
 struct CompletionResult {
     std::size_t start = 0;
     std::size_t end = 0;

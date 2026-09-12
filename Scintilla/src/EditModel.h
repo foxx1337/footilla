@@ -84,6 +84,11 @@ public:
 	// Wrapping support
 	int wrapWidth;
 
+	// Derived, view-local metadata. Never part of Document's text or undo history.
+	std::vector<int> lineInsets;
+	int LineInset(Sci::Line line) const noexcept;
+	void MoveLineInsets(Sci::Line line, Sci::Line linesAdded);
+
 	Document *pdoc;
 
 	Scintilla::UndoSelectionHistoryOption undoSelectionHistoryOption = UndoSelectionHistoryOption::Disabled;

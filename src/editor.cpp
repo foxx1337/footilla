@@ -2,6 +2,7 @@
 #include <footilla/language.h>
 
 #include <Scintilla.h>
+#include <ScintillaFootilla.h>
 
 #include <algorithm>
 #include <limits>
@@ -84,7 +85,7 @@ bool Editor::Create(HWND parent, int controlId, const RECT& bounds, const Option
     if (!IsUiThread() || window_ || !IsWindow(parent) ||
         GetWindowThreadProcessId(parent, nullptr) != uiThread ||
         controlId < 0 || controlId > 65535 ||
-        options.fontSizePoints < 1 || options.fontSizePoints > 200) {
+        options.fontSizePoints < 1 || options.fontSizePoints > 200 || options.visualIndentationWidth < 0) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return false;
     }
@@ -122,6 +123,7 @@ bool Editor::Create(HWND parent, int controlId, const RECT& bounds, const Option
     Send(SCI_AUTOCSETCHOOSESINGLE, false);
     Send(SCI_AUTOCSETCANCELATSTART, false);
     Send(SCI_AUTOCSETFILLUPS, 0, reinterpret_cast<LPARAM>(""));
+    SetVisualIndentationWidth(options.visualIndentationWidth);
     SetFont("Consolas", options.fontSizePoints);
     SetTheme(options.theme);
     SetLineNumbers(options.lineNumbers);
@@ -242,6 +244,37 @@ void Editor::SetFont(std::string_view utf8Face, int points) {
         Send(SCI_STYLESETSIZE, style, points);
     }
     SetLineNumbers(lineNumbers_);
+}
+
+void Editor::SetVisualIndentationWidth(int columns) {
+    RequireWindow();
+    if (columns < 0) {
+        throw std::invalid_argument("Footilla visual indentation width must be nonnegative.");
+    }
+    const int previous = visualIndentationWidth_;
+    visualIndentationWidth_ = columns;
+    try {
+        UpdateVisualInsets();
+    } catch (const std::exception&) {
+        visualIndentationWidth_ = previous;
+        throw;
+    }
+}
+
+void Editor::UpdateVisualInsets() {
+    std::vector<int> columns;
+    if (visualIndentationWidth_ != 0) {
+        columns = language::VisualIndentLevels(GetText());
+        for (auto& level : columns) {
+            if (level > (std::numeric_limits<int>::max)() / visualIndentationWidth_) {
+                throw std::length_error("Footilla visual indentation exceeds the column limit.");
+            }
+            level *= visualIndentationWidth_;
+        }
+    }
+    if (!Send(Scintilla::Footilla::SetLineInsets, columns.size(), reinterpret_cast<LPARAM>(columns.data()))) {
+        throw std::runtime_error("Scintilla could not update visual line insets.");
+    }
 }
 
 void Editor::SetExtraFields(std::vector<std::string> names) {
@@ -419,6 +452,7 @@ void Editor::OnNotify(const SCNotification& notification) {
     case SCN_MODIFIED:
         if (notification.modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) {
             styleDirty_ = true;
+            UpdateVisualInsets();
             QueueChange();
         }
         break;

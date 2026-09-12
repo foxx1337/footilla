@@ -324,6 +324,93 @@ void CallTests() {
     CheckCall(utf8, utf8.size(), u8"自作", utf8.find('('), 1);
 }
 
+void CheckIndent(std::string_view text, std::initializer_list<int> expected) {
+    const auto actual = VisualIndentLevels(text);
+    const std::vector<int> expectedLevels(expected);
+    CHECK(actual == expectedLevels);
+    if (actual != expectedLevels) {
+        std::cerr << "  indentation in [" << text << "]: got";
+        for (const int level : actual) {
+            std::cerr << ' ' << level;
+        }
+        std::cerr << "; expected";
+        for (const int level : expectedLevels) {
+            std::cerr << ' ' << level;
+        }
+        std::cerr << '\n';
+    }
+}
+
+void VisualIndentTests() {
+    CheckIndent("$if(%artist%,\n$if(%album%,\n%title%\n),\nfallback\n)",
+        {0, 1, 2, 1, 1, 0});
+    CheckIndent("", {0});
+    CheckIndent("text", {0});
+    CheckIndent("text\n", {0, 0});
+    CheckIndent("\n", {0, 0});
+    CheckIndent("\r", {0, 0});
+    CheckIndent("\r\n", {0, 0});
+    CheckIndent("\n\r\n\r", {0, 0, 0, 0});
+    CheckIndent("$if(\r\nx\ry\n)\r\n", {0, 1, 1, 0, 0});
+    CheckIndent("$if(\n\n \t\n)", {0, 1, 1, 0});
+    CheckIndent("[\n\n", {0, 1, 1});
+
+    std::string spaced = "$if(\n    $custom(\n \t%title%\n  )\n\t)";
+    const auto original = spaced;
+    CheckIndent(spaced, {0, 1, 2, 1, 0});
+    CHECK(spaced == original);
+    CheckIndent(" \t \n   text\n\t", {0, 0, 0});
+    CheckIndent("$if(\ntext $nested(\nvalue ) tail\nrest\n)", {0, 1, 2, 1, 0});
+    CheckIndent("$if([\n$custom(\n)]),\nlast", {0, 2, 0, 0});
+    CheckIndent("$f([\n ) \t] )\nend", {0, 0, 0});
+    CheckIndent("$f([\n] text )\nend", {0, 1, 0});
+    CheckIndent("$f($g(\n),)\nend", {0, 1, 0});
+
+    CheckIndent("$if(\n \t// ) ] $fake(\r\nvalue\n)", {0, 1, 1, 0});
+    CheckIndent("// $fake([\ntext", {0, 0});
+    CheckIndent("$if(\nx // $custom(\ny\n)\n)", {0, 1, 2, 1, 0});
+    CheckIndent("$if(\n%tag,with([)]'and$dollars%\nvalue\n)", {0, 1, 1, 0});
+    CheckIndent("$if(\n%unfinished ) ]\nvalue\n)", {0, 1, 1, 0});
+    CheckIndent("%field(with)parens%(\ntext\n)", {0, 0, 0});
+
+    CheckIndent("$if(\n'([)] $fake(''quoted'')'\nvalue\n)", {0, 1, 1, 0});
+    CheckIndent("$if(\n''[\nvalue\n])", {0, 1, 2, 0});
+    CheckIndent("$if(\n'first\r\n)] $fake(\r   ) [\nlast'\nvalue\n)",
+        {0, 1, 1, 1, 1, 1, 0});
+    CheckIndent("$if(\n'first\n)' )\nnext", {0, 1, 1, 0});
+    CheckIndent("$if(\n'first\n   ')\nnext", {0, 1, 1, 0});
+    CheckIndent("$if(\n'unfinished\n)\r\n[\r", {0, 1, 1, 1, 1});
+    CheckIndent("'\n]\n", {0, 0, 0});
+    CheckIndent(u8"$自作(\n[日本 %曲名%]\n'🙂])'\n)", {0, 1, 1, 0});
+
+    CheckIndent("literal (\ntext\n)\n", {0, 0, 0, 0});
+    CheckIndent("[\nliteral (\ntext\n)\n]", {0, 1, 1, 1, 0});
+    CheckIndent("$(\ntext\n)", {0, 0, 0});
+    CheckIndent("$if (\ntext\n)", {0, 0, 0});
+    CheckIndent("$if\n(\ntext\n)", {0, 0, 0, 0});
+    CheckIndent("$plugin_name(\nfoo\n)", {0, 1, 0});
+    CheckIndent("custom(\nfoo\n)", {0, 0, 0});
+    CheckIndent("$f((\narg\n)\nnext\n)", {0, 2, 1, 1, 0});
+    CheckIndent("$f([\n(\nx\n)\n]\n)", {0, 2, 3, 2, 1, 0});
+
+    CheckIndent(")]\nvalue\n", {0, 0, 0});
+    CheckIndent("$f([\n)\nx\n]\n)", {0, 2, 2, 1, 0});
+    CheckIndent("$f([\n)]\nx\n)", {0, 1, 1, 0});
+    CheckIndent("[\n$f(\n]\nx\n)\n]", {0, 1, 2, 2, 1, 0});
+    CheckIndent("$f(\n[\n", {0, 1, 2});
+
+    std::string deep;
+    for (int i = 0; i < 10000; ++i) {
+        deep += "$if([";
+    }
+    deep += "\nvalue\n";
+    for (int i = 0; i < 10000; ++i) {
+        deep += "])";
+    }
+    deep += '\n';
+    CheckIndent(deep, {0, 20000, 0, 0});
+}
+
 // Exercise every caret position and malformed byte sequences without recursion.
 void RobustnessTests() {
     const std::string symbols = "$%(),'[]/ \t\r\nabc012<>\x80";
@@ -371,6 +458,7 @@ int main() {
     StyleTests();
     CompletionTests();
     CallTests();
+    VisualIndentTests();
     RobustnessTests();
     if (failures != 0) {
         std::cerr << failures << " failures in " << checks << " checks\n";

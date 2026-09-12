@@ -34,6 +34,7 @@
 #include "ScintillaTypes.h"
 #include "ScintillaMessages.h"
 #include "ScintillaStructures.h"
+#include "ScintillaFootilla.h"
 #include "ILoader.h"
 #include "ILexer.h"
 
@@ -2902,6 +2903,7 @@ void Editor::NotifyModified(Document *, DocModification mh, void *) {
 				pcs->DeleteLines(lineOfPos, -mh.linesAdded);
 			}
 			view.LinesAddedOrRemoved(lineOfPos, mh.linesAdded);
+			MoveLineInsets(lineOfPos, mh.linesAdded);
 		}
 		if (FlagSet(mh.modificationType, ModificationFlags::ChangeAnnotation)) {
 			const Sci::Line lineDoc = pdoc->SciLineFromPosition(mh.position);
@@ -5566,6 +5568,7 @@ void Editor::SetAnnotationHeights(Sci::Line start, Sci::Line end) {
 }
 
 void Editor::SetDocPointer(Document *document) {
+	lineInsets.clear();
 	//Platform::DebugPrintf("** %x setdoc to %x\n", pdoc, document);
 	pdoc->RemoveWatcher(this, nullptr);
 	pdoc->Release();
@@ -6296,6 +6299,33 @@ sptr_t Editor::BytesResult(Scintilla::sptr_t lParam, std::string_view sv) noexce
 
 sptr_t Editor::WndProc(Message iMessage, uptr_t wParam, sptr_t lParam) {
 	//Platform::DebugPrintf("S start wnd proc %d %d %d\n",iMessage, wParam, lParam);
+
+	if (static_cast<unsigned int>(iMessage) == Footilla::GetLineInset) {
+		return LineInset(LineFromUPtr(wParam));
+	}
+	if (static_cast<unsigned int>(iMessage) == Footilla::SetLineInsets) {
+		if (wParam != 0 && (wParam != static_cast<uptr_t>(pdoc->LinesTotal()) || !lParam)) {
+			errorStatus = Status::Failure;
+			return 0;
+		}
+		std::vector<int> updated;
+		if (wParam) {
+			const int *columns = reinterpret_cast<const int *>(lParam);
+			if (std::any_of(columns, columns + wParam, [](int value) { return value < 0; })) {
+				errorStatus = Status::Failure;
+				return 0;
+			}
+			updated.assign(columns, columns + wParam);
+		}
+		if (updated != lineInsets) {
+			lineInsets = std::move(updated);
+			view.llc.Invalidate(LineLayout::ValidLevel::positions);
+			NeedWrapping();
+			view.lineWidthMaxSeen = 0;
+			Redraw();
+		}
+		return 1;
+	}
 
 	// Optional macro recording hook
 	if (recordingMacro)

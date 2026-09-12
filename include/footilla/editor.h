@@ -25,6 +25,7 @@ struct Options {
     bool wordWrap = false;
     bool readOnly = false;
     int fontSizePoints = 11;
+    int visualIndentationWidth = 2;
 };
 
 // Parent destruction detaches the object; object destruction destroys the window.
@@ -52,6 +53,9 @@ public:
     void SetWordWrap(bool enabled);
     void SetLineNumbers(bool enabled);
     void SetFont(std::string_view utf8Face, int points);
+    // Display-only columns per syntax level. Zero disables; never inserts whitespace.
+    void SetVisualIndentationWidth(int columns);
+    int GetVisualIndentationWidth() const noexcept { return visualIndentationWidth_; }
     void SetExtraFields(std::vector<std::string> names);
     void SetExtraFunctions(std::vector<std::string> names);
     void ShowCompletion();
@@ -68,6 +72,7 @@ private:
     std::intptr_t Send(unsigned int message, std::uintptr_t wParam = 0, std::intptr_t lParam = 0) const;
     void RequireWindow() const;
     void Restyle();
+    void UpdateVisualInsets();
     void UpdateCallTip(bool force);
     void AcceptCompletion(std::string selected);
     void HighlightBraces();
@@ -79,6 +84,7 @@ private:
     bool changePending_ = false;
     bool editingCompletion_ = false;
     bool lineNumbers_ = true;
+    int visualIndentationWidth_ = 2;
     std::vector<std::string> extraFields_;
     std::vector<std::string> extraFunctions_;
 };

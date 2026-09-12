@@ -56,6 +56,30 @@ Select an example or toggle the editor's dark palette, wrapping and read-only
 mode. Outside a popup, Tab/Shift+Tab traverse the demo's controls.
 `%datetime%` demonstrates a host-supplied field, not a foobar2000 built-in.
 
+### Visual indentation
+
+Footilla displays a stepped left inset based on nested function calls and
+conditional sections. Each level is two space-width columns by default.
+The line-number gutter stays straight; the blank strip between it and the text
+uses the gutter background. Leading closing delimiters align with their openers,
+and blank lines retain the enclosing level.
+
+**The inset is not whitespace.** Enter inserts only the normal newline; it does
+not insert spaces or tabs. Text access, selection, copy/paste, save, and undo
+continue to operate on the original document bytes. Home goes to the first real
+character, and clicking the blank inset positions the caret there. Literal
+spaces already present in the expression are neither removed nor hidden.
+Comments, quoted literals and field names do not introduce nesting.
+
+Set `Options::visualIndentationWidth` before `Create()`, or call
+`Editor::SetVisualIndentationWidth(columns)` on a live control. The getter is
+`GetVisualIndentationWidth()`. Zero disables visual indentation; negative widths
+are rejected. Changing this display setting does not modify text or undo history.
+The width follows the editor font, zoom and DPI. Wrapped continuation lines keep
+their document line's inset; extreme nesting is visually limited to leave room
+for text when wrapping. This is automatic syntax layout, not manual Tab-based
+indentation.
+
 Highlighting distinguishes fields, functions, quoted text, line comments,
 conditional sections, punctuation, numbers and unfinished lexical constructs.
 This is **editing assistance, not a title-format evaluator or full validator**.
@@ -106,7 +130,7 @@ Use `Focus()` to enter it. Parent dialogs receive coalesced
 `WM_COMMAND / EN_CHANGE`, with the host control ID and `Handle()` in `lParam`;
 read updated text using `GetText()`. No `WM_NOTIFY` forwarding is required.
 `ScintillaHandle()` is available for advanced Scintilla messages; do not replace
-its document, lexer or notification settings behind Footilla.
+its document, lexer, line-inset metadata or notification settings behind Footilla.
 
 This is not a binary-compatible replacement for the Windows `EDIT` class:
 use the API instead of `WM_GETTEXT`, `WM_SETTEXT`, or `EM_*` messages.
@@ -150,8 +174,22 @@ upstream updates are deliberate merges with the copyright notices preserved.
 If an interface change requires regenerating headers, use the matching upstream
 generation tools and include the generated headers in the change.
 `cmake\Scintilla.cmake` compiles this tree as the `footilla_scintilla` object
-target; its objects are included in `footilla.lib`. Vendoring does not change
-editor behavior; visual indentation is not implemented by this change.
+target; its objects are included in `footilla.lib`.
+
+The maintained engine adds generic, view-local line insets. The private
+`Scintilla\include\ScintillaFootilla.h` messages set a complete array of
+nonnegative inset columns and query a line's configured inset. These messages
+are Footilla extensions, not upstream Scintilla APIs. `EditModel` owns the
+metadata, `Editor` invalidates affected layout, and `EditView` applies the same
+pixel inset to painting, caret coordinates, mouse/rectangular hit-testing,
+wrapping and horizontal extent tracking. The renderer also uses the inset when
+printing. No synthetic characters or runtime hooks are used. Each Scintilla view
+defaults to zero inset until its host supplies metadata.
+
+Footilla's language scanner computes the levels and republishes them after
+insertions/deletions, including paste and undo/redo. The engine contains no
+foobar2000 grammar. The initial upstream baseline remains recorded as 5.6.6;
+the code in this tree now includes Footilla's maintained changes.
 
 Redistributing `footilla.lib` or an application linked to it also redistributes
 Scintilla. Include the upstream notice copied by CMake to

@@ -91,6 +91,22 @@ void ModelState::TruncateUndo(int index) {
 	historyForRedo.stack.erase(itRedo, historyForRedo.stack.end());
 }
 
+int EditModel::LineInset(Sci::Line line) const noexcept {
+	return line >= 0 && static_cast<size_t>(line) < lineInsets.size() ? lineInsets[line] : 0;
+}
+
+void EditModel::MoveLineInsets(Sci::Line line, Sci::Line linesAdded) {
+	if (lineInsets.empty() || linesAdded == 0)
+		return;
+	const size_t start = std::min(static_cast<size_t>(line + 1), lineInsets.size());
+	if (linesAdded > 0) {
+		lineInsets.insert(lineInsets.begin() + start, static_cast<size_t>(linesAdded), LineInset(line));
+	} else {
+		const size_t end = start + std::min(static_cast<size_t>(-linesAdded), lineInsets.size() - start);
+		lineInsets.erase(lineInsets.begin() + start, lineInsets.begin() + end);
+	}
+}
+
 EditModel::EditModel() : braces{} {
 	inOverstrike = false;
 	xOffset = 0;

@@ -75,6 +75,7 @@ public:
 	int widthLine = wrapWidthInfinite;
 	int lines = 1;
 	XYPOSITION wrapIndent = 0; // In pixels
+	int visualInset = 0; // Display padding, not a character or virtual-space position.
 
 	LineLayout(Sci::Line lineNumber_, int maxLineLength_);
 	void Resize(int maxLineLength_);

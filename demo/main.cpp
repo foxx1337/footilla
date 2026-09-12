@@ -21,12 +21,15 @@ enum : int {
 constexpr const char* Examples[] = {
     "// Now-playing text: functions, metadata and conditional sections\r\n"
     "$if(%isplaying%,\r\n"
-    "  $if2(%album artist%,Unknown artist) - %title%\r\n"
-    "  [ '(' %date% ')' ]\r\n"
-    "  $crlf()\r\n"
-    "  [%album% / ]$num(%tracknumber%,2)\r\n"
-    "  [ - %playback_time% / %length%],\r\n"
-    "  'Playback stopped'\r\n"
+    "$if2(\r\n"
+    "%album artist%,\r\n"
+    "Unknown artist\r\n"
+    ") - %title%\r\n"
+    "[ '(' %date% ')' ]\r\n"
+    "$crlf()\r\n"
+    "[%album% / ]$num(%tracknumber%,2)\r\n"
+    "[ - %playback_time% / %length%],\r\n"
+    "'Playback stopped'\r\n"
     ")\r\n",
 
     "// Filename generation and nested functions\r\n"
@@ -112,7 +115,7 @@ private:
     void UpdateStatus() {
         const auto text = editor_.GetText();
         const std::wstring message = std::to_wstring(text.size()) +
-            L" UTF-8 bytes  |  Static Scintilla engine  |  Editing only; no foobar2000 evaluation";
+            L" UTF-8 bytes  |  Visual indentation adds no spaces  |  No foobar2000 evaluation";
         status_.SetWindowText(message.c_str());
     }
 

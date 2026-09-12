@@ -1,6 +1,8 @@
 #include "footilla/language.h"
 
 #include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include <utility>
 
 namespace footilla::language {
@@ -74,7 +76,7 @@ struct Token {
     bool closed = false;
 };
 
-// The same byte scanner drives styling, completion and call-tip context.
+// The same byte scanner drives styling, visual indentation, completion and call-tip context.
 // No catalog lookup is involved in lexing: components can add arbitrary names.
 class Scanner {
 public:
@@ -314,6 +316,61 @@ std::vector<unsigned char> StyleText(std::string_view text) {
             static_cast<unsigned char>(token.style));
     }
     return styles;
+}
+
+std::vector<int> VisualIndentLevels(std::string_view text) {
+    struct Frame {
+        char closing;
+        bool inFunction;
+    };
+    std::vector<Frame> stack;
+    std::vector<int> levels{0};
+    bool leadingClosers = true;
+    bool followsFunction = false;
+    const auto open = [&](char closing, bool inFunction) {
+        if (stack.size() >= static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            throw std::length_error("Visual indentation nesting exceeds int range");
+        }
+        stack.push_back({closing, inFunction});
+    };
+    Scanner scanner(text);
+    Token token;
+    while (scanner.Next(token)) {
+        for (std::size_t i = token.start; i < token.end; ++i) {
+            const char ch = text[i];
+            if (IsNewline(ch)) {
+                if (ch != '\n' || i == 0 || text[i - 1] != '\r') {
+                    levels.push_back(static_cast<int>(stack.size()));
+                    leadingClosers = true;
+                }
+                continue;
+            }
+            if (token.kind == Kind::Symbol) {
+                const bool inFunction = !stack.empty() && stack.back().inFunction;
+                if (ch == '[') {
+                    open(']', inFunction);
+                } else if (ch == '(' && (followsFunction || inFunction)) {
+                    // Balance generic argument grouping without treating literal
+                    // parentheses outside an actual call as function scope.
+                    open(')', true);
+                } else if (ch == ')' || ch == ']') {
+                    if (!stack.empty() && stack.back().closing == ch) {
+                        stack.pop_back();
+                    }
+                    if (leadingClosers) {
+                        levels.back() = static_cast<int>(stack.size());
+                    }
+                    continue;
+                }
+            }
+            // Even spaces in a continuing quote belong to its literal prefix.
+            if (token.kind != Kind::Text || (ch != ' ' && ch != '\t')) {
+                leadingClosers = false;
+            }
+        }
+        followsFunction = token.kind == Kind::Function && token.end - token.start > 1;
+    }
+    return levels;
 }
 
 CompletionResult Complete(std::string_view text, std::size_t caret,
