@@ -5,8 +5,6 @@ if(NOT WIN32 OR NOT MSVC)
     message(FATAL_ERROR "Footilla currently requires Windows and an MSVC-compatible toolchain.")
 endif()
 
-set(FOOTILLA_SCITE_SOURCE_DIR "" CACHE PATH
-    "SciTE source bundle containing scintilla/, or the scintilla source directory itself")
 set(FOOTILLA_WTL_DIR "" CACHE PATH "WTL root containing Include/atlapp.h (demo only)")
 option(FOOTILLA_BUILD_DEMO "Build the WTL editor playground" ${PROJECT_IS_TOP_LEVEL})
 option(FOOTILLA_BUILD_TESTS "Build the language and native control tests" ${PROJECT_IS_TOP_LEVEL})

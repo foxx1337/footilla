@@ -1,8 +1,9 @@
 # Footilla
 
 A reusable Win32 text input control for foobar2000 title-format expressions,
-built as **footilla.lib**. Uses the same Scintilla editing engine as SciTE, with
-Footilla's own title-format container lexer, completion catalog and call tips.
+built as **footilla.lib**. Ships a Footilla-maintained copy of the Scintilla
+editing engine used by SciTE, with Footilla's own title-format container lexer,
+completion catalog and call tips.
 The engine's object files are included in the library: no Scintilla DLL,
 Lexilla DLL, SciTE executable, WTL runtime or foobar2000 SDK is required.
 
@@ -13,13 +14,13 @@ The standalone playground uses C++ and WTL. `foo_nowplaying2` is not modified.
 Requires CMake 3.24+, Visual Studio with Desktop development with C++, a Windows
 SDK, and ATL for the demo. The demo also requires WTL 10 headers.
 The DPI-aware playground targets Windows 10 or later.
-The Scintilla source integration targets the local **5.6.6** source layout.
+Scintilla is included in this repository under `Scintilla`; no external
+SciTE/Scintilla checkout or source-path parameter is required.
 
 From this project's directory, using PowerShell:
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64 `
-  -DFOOTILLA_SCITE_SOURCE_DIR="C:\src\c\foobar2000\scite" `
   -DFOOTILLA_WTL_DIR="C:\src\c\WTL10"
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
@@ -31,9 +32,8 @@ x86 instead; use a separate build folder. Library, engine and consumer must use
 the same architecture and MSVC runtime. The project respects
 `CMAKE_MSVC_RUNTIME_LIBRARY` instead of overriding a parent's runtime policy.
 
-`FOOTILLA_SCITE_SOURCE_DIR` accepts the extracted bundle containing `scintilla`,
-the `scintilla` directory itself, or the sibling `scite` application directory.
-No external sources are downloaded, modified, or built in place.
+The build always uses the repository's maintained Scintilla sources. It does
+not download sources, apply patches, or access a sibling SciTE installation.
 
 For the library alone, set `FOOTILLA_BUILD_DEMO=OFF` and
 `FOOTILLA_BUILD_TESTS=OFF`; WTL and ATL are then unnecessary.
@@ -67,7 +67,6 @@ short title-format expressions, rather than large source files.
 ## Embed in a CMake application or plugin
 
 ```cmake
-set(FOOTILLA_SCITE_SOURCE_DIR "C:/src/c/foobar2000/scite" CACHE PATH "")
 set(FOOTILLA_BUILD_DEMO OFF CACHE BOOL "")
 set(FOOTILLA_BUILD_TESTS OFF CACHE BOOL "")
 add_subdirectory(path/to/footilla)
@@ -129,11 +128,33 @@ should use their host's existing OLE initialization.
 Syntax and the built-in catalog are based on the
 [Hydrogenaudio title-format reference](https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Title_Formatting_Reference).
 Catalog descriptions are concise original summaries, not copied article text.
-SciTE's `win32/scite.mak` and Scintilla's `win32/scintilla.mak` describe the
-upstream static-engine integration on which the CMake source list is based.
+
+### Maintained Scintilla sources
+
+`Scintilla` contains the static Win32 engine sources and their transitive header
+dependencies, copied unchanged from **Scintilla 5.6.6** on 2026-09-12. The original
+SciTE/Scintilla source folder is not modified. `Scintilla\version.txt` records
+the upstream baseline (`566`); `Scintilla\License.txt` retains the upstream
+copyright and redistribution terms.
+
+`Scintilla\src` contains the editor core, `Scintilla\win32` the Windows backend,
+and `Scintilla\include` the required public headers and `Scintilla.iface`
+interface definition. The initial source list follows the static
+`COMPONENT_OBJS` from upstream `win32\scintilla.mak`. DLL entry points/resources,
+other platform backends, SciTE, Lexilla and upstream build/generation tools are
+not included.
+
+These are ordinary, Footilla-maintained source files, not a submodule or a
+build-time overlay. Future engine changes belong directly in this tree;
+upstream updates are deliberate merges with the copyright notices preserved.
+If an interface change requires regenerating headers, use the matching upstream
+generation tools and include the generated headers in the change.
+`cmake\Scintilla.cmake` compiles this tree as the `footilla_scintilla` object
+target; its objects are included in `footilla.lib`. Vendoring does not change
+editor behavior; visual indentation is not implemented by this change.
 
 Redistributing `footilla.lib` or an application linked to it also redistributes
 Scintilla. Include the upstream notice copied by CMake to
 `build\Scintilla-License.txt` and next to `footilla.lib`. WTL is used only by the
 playground; its source distribution's `MS-PL.txt` is copied next to the demo as
-`WTL-License.txt` when available. No upstream sources are vendored here.
+`WTL-License.txt` when available.

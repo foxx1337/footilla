@@ -1,17 +1,4 @@
-if(NOT FOOTILLA_SCITE_SOURCE_DIR)
-    message(FATAL_ERROR "Set FOOTILLA_SCITE_SOURCE_DIR to your local SciTE/Scintilla source folder.")
-endif()
-
-file(TO_CMAKE_PATH "${FOOTILLA_SCITE_SOURCE_DIR}" _footilla_source_root)
-if(EXISTS "${_footilla_source_root}/scintilla/include/Scintilla.h")
-    set(FOOTILLA_SCINTILLA_DIR "${_footilla_source_root}/scintilla")
-elseif(EXISTS "${_footilla_source_root}/include/Scintilla.h")
-    set(FOOTILLA_SCINTILLA_DIR "${_footilla_source_root}")
-elseif(EXISTS "${_footilla_source_root}/../scintilla/include/Scintilla.h")
-    set(FOOTILLA_SCINTILLA_DIR "${_footilla_source_root}/../scintilla")
-else()
-    message(FATAL_ERROR "No Scintilla sources under '${FOOTILLA_SCITE_SOURCE_DIR}'. Expected scintilla/include/Scintilla.h or include/Scintilla.h.")
-endif()
+get_filename_component(FOOTILLA_SCINTILLA_DIR "${CMAKE_CURRENT_LIST_DIR}/../Scintilla" ABSOLUTE)
 
 # Mirrors win32/scintilla.mak's static COMPONENT_OBJS. Deliberately excludes
 # ScintillaDLL.cxx (DllMain) and ScintRes.rc (DLL version resources).
@@ -32,7 +19,7 @@ foreach(_source IN LISTS _footilla_platform_sources)
 endforeach()
 foreach(_source IN LISTS _footilla_sources)
     if(NOT EXISTS "${_source}")
-        message(FATAL_ERROR "Unsupported/incomplete Scintilla source tree: missing '${_source}'. Footilla targets Scintilla 5.6.6.")
+        message(FATAL_ERROR "Incomplete vendored Scintilla source tree: missing '${_source}'.")
     endif()
 endforeach()
 
