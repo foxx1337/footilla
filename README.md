@@ -7,6 +7,13 @@ completion catalog and call tips.
 The engine's object files are included in the library: no Scintilla DLL,
 Lexilla DLL, SciTE executable, WTL runtime or foobar2000 SDK is required.
 
+Support for light and dark themes, title formatting, indentation without
+whitespace (since whitespace is passed through), autocomplete and parameter
+info:
+
+![Light theme, parameter info](./doc/demo_light.png)
+![Dark theme, autocomplete](./doc/demo_dark.png)
+
 The standalone playground uses C++ and WTL. See
 [Embedding in a foobar2000 preferences page](#embedding-in-a-foobar2000-preferences-page)
 for the integration pattern used by `foo_nowplaying2`.
