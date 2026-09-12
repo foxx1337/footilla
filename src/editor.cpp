@@ -203,7 +203,7 @@ void Editor::SetTheme(Theme theme) {
     style(language::Style::Error, dark ? RGB(255, 122, 136) : RGB(196, 35, 55));
     Send(SCI_STYLESETITALIC, static_cast<unsigned int>(language::Style::Comment), true);
     Send(SCI_STYLESETFORE, STYLE_LINENUMBER, dark ? RGB(140, 147, 161) : RGB(108, 116, 128));
-    Send(SCI_STYLESETBACK, STYLE_LINENUMBER, dark ? RGB(38, 41, 49) : RGB(242, 244, 248));
+    Send(SCI_STYLESETBACK, STYLE_LINENUMBER, dark ? RGB(64, 64, 64) : RGB(224, 224, 224));
     Send(SCI_SETCARETFORE, fore);
     Send(SCI_SETSELBACK, true, dark ? RGB(61, 77, 110) : RGB(201, 222, 250));
     Send(SCI_STYLESETBACK, STYLE_BRACELIGHT, dark ? RGB(67, 84, 103) : RGB(212, 231, 250));
