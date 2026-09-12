@@ -7,7 +7,9 @@ completion catalog and call tips.
 The engine's object files are included in the library: no Scintilla DLL,
 Lexilla DLL, SciTE executable, WTL runtime or foobar2000 SDK is required.
 
-The standalone playground uses C++ and WTL. `foo_nowplaying2` is not modified.
+The standalone playground uses C++ and WTL. See
+[Embedding in a foobar2000 preferences page](#embedding-in-a-foobar2000-preferences-page)
+for the integration pattern used by `foo_nowplaying2`.
 
 ## Build
 
@@ -137,8 +139,14 @@ use the API instead of `WM_GETTEXT`, `WM_SETTEXT`, or `EM_*` messages.
 All editor calls and object lifetimes belong to the initializing UI thread.
 Destroying the parent detaches the C++ object; destroying the object destroys
 its window. Destroy all editors before calling `footilla::Shutdown()`, outside
-`DllMain`, before unloading a plugin. `Initialize` is idempotent, not
-reference-counted. `Shutdown` rejects live editors.
+`DllMain`, before unloading a plugin. `Initialize` is idempotent while initialized,
+not reference-counted. `Shutdown` rejects live editors.
+
+**Treat `Shutdown()` as terminal for this loaded component. Do not pair
+`Initialize()`/`Shutdown()` with opening/closing an editor or preferences page.**
+The current Scintilla backend uses process-lifetime one-time initialization for
+its popup classes; a shutdown/reinitialize cycle does not restore those classes.
+Keep the runtime alive between editor instances. See the lifecycle guidance below.
 
 Scintilla registers process-global window classes. Do not initialize a second
 independently linked Scintilla instance in the same process; initialization
@@ -146,6 +154,221 @@ fails rather than silently attaching to another component's engine. A host
 already embedding Scintilla needs a coordinated shared engine integration.
 The demo initializes OLE on its UI thread for Scintilla drag/drop; embedders
 should use their host's existing OLE initialization.
+
+## Embedding in a foobar2000 preferences page
+
+The integration has two layers: Footilla owns the editing window and language
+assistance; the plugin owns its preferences state, foobar2000 callbacks, dialog
+navigation, theme notifications, and runtime lifetime. A small plugin-side
+adapter shared by all Format fields keeps those responsibilities consistent.
+These requirements come from embedding Footilla in the Now Playing, Next Up,
+and Log tabs of `foo_nowplaying2`.
+
+### Dependency and build setup
+
+From your plugin repository, add and initialize the dependency:
+
+```powershell
+git submodule add https://github.com/foxx1337/footilla.git footilla
+git submodule update --init --recursive
+```
+
+Commit the submodule pointer and `.gitmodules` with your integration. Other
+developers should clone with `--recurse-submodules`, or run the update command
+after cloning. Link `footilla::footilla` using the CMake setup above; disable
+Footilla's standalone demo and tests for normal plugin builds.
+
+Use the same architecture, compatible MSVC toolset, and matching runtime
+configuration for the plugin, Footilla, Scintilla, and foobar2000 SDK libraries.
+If selecting a per-target `VS_PLATFORM_TOOLSET`, apply it to both `footilla` and
+`footilla_scintilla` as well as the plugin. Footilla does not itself require
+`foo_nowplaying2`'s v142 release-toolset policy.
+
+If the parent project sets a newer C++ standard, retain Footilla's C++17 build
+settings after adding its subdirectory:
+
+```cmake
+set_target_properties(footilla footilla_scintilla PROPERTIES CXX_STANDARD 17)
+```
+
+Apply the same setting to any optional Footilla demo/test targets you enable.
+Ship `Scintilla-License.txt` beside the component DLL and include it in both
+normal and debug component packages.
+
+### Keep runtime lifetime separate from window lifetime
+
+Initialize on foobar2000's main/UI thread, outside `DllMain`, passing
+`core_api::get_my_instance()` as the module instance. Lazy initialization before
+the first editor is sufficient; keep an initialized flag independent of your
+count of live editors.
+
+| Event | Plugin responsibility |
+| --- | --- |
+| First editor creation | Call `footilla::Initialize()` once, check the result, then create the editor. |
+| Additional editor creation | Reuse the initialized runtime; create an independent `Editor` instance. |
+| Preferences close, tab destruction, or page recreation | Destroy the affected editor windows and release their plugin-side hooks. Keep the runtime initialized even when no editors remain. |
+| Component shutdown | Request runtime shutdown; call `footilla::Shutdown()` only after every editor has been destroyed. |
+| Creation requested after shutdown begins | Reject it explicitly; do not restart the runtime. |
+
+Register component shutdown through an SDK `initquit` implementation and
+`initquit_factory_t`. **`on_quit()` runs before the main window is destroyed**,
+so it must not assume preferences windows have already gone away. If editors
+are still alive, record a shutdown request and let the last editor's destruction
+perform the final cleanup. Report initialization and cleanup failures.
+
+Why this matters: Scintilla registers `ListBoxX` (autocomplete) and `CallTip`
+through a `std::once_flag` in `ScintillaWin::SWndProc`. Shutdown unregisters them,
+but reopening the main editor does not run that one-time setup again. The editor
+can still display and edit text while its popups fail to appear. In the current
+backend, failed popup creation can also lead to null-HWND redraw calls and
+desktop-wide flashing. This can surface during a theme change or navigation
+that recreates a preferences page; it is not evidence that the popup simply
+needs a dark-mode subclass.
+
+### Mark every embedded dialog as a control parent
+
+Use `DS_CONTROL` on the plugin's child preferences page and **every nested tab
+dialog** that participates in keyboard navigation. For example, a child dialog
+template's style line can be:
+
+```rc
+STYLE DS_CONTROL | DS_SETFONT | WS_CHILD
+```
+
+This establishes `WS_EX_CONTROLPARENT` on the created child dialog. Footilla
+already sets that extended style on its own wrapper, but cannot fix its
+ancestors. The hierarchy should look like this:
+
+```text
+foobar2000 preferences host
+  Plugin preferences page        DS_CONTROL
+    Embedded tab dialog          DS_CONTROL
+      Footilla.Editor            WS_EX_CONTROLPARENT (provided by Footilla)
+        Scintilla                Focusable input control
+```
+
+A missing intermediate control-parent style can trap Windows' default-button
+and keyboard-navigation traversal inside `IsDialogMessage`, making the entire
+foobar2000 UI appear deadlocked. Setting the flag only on Footilla is not enough.
+This requirement applies to embedded dialogs, not the top-level preferences host.
+
+### Replace the resource control before installing theme hooks
+
+Keep an `Editor` (or the plugin adapter that owns it) as a dialog member. An
+existing `EDITTEXT` resource can serve as a position/tab-order placeholder:
+
+1. Find the placeholder by its control ID. Obtain its rectangle and convert it
+   from screen coordinates to the containing dialog's client coordinates.
+2. Create Footilla with the same parent, control ID, and rectangle. Configure
+   its options, plugin-specific completion names, and initial UTF-8 text.
+3. Use `SetWindowPos` to place the new wrapper immediately after the placeholder
+   in sibling order, without moving, resizing, or activating it.
+4. Destroy the placeholder. The replacement now occupies its tab-order position.
+5. Install the plugin's theme bridge, then call the dialog's
+   `dark_mode_.AddDialogWithControls(...)` so discovery sees the new control,
+   not a soon-to-be-destroyed EDIT.
+
+The theme bridge can also be installed immediately after creating Footilla;
+the important ordering is that both replacement and bridge precede dark-mode
+control discovery. Check failures before removing the placeholder, and surface
+an initialization error rather than leaving an editable field that is no longer
+connected to saved settings.
+
+The plugin can override appearance without modifying Footilla. For example,
+`foo_nowplaying2` configures:
+
+```cpp
+footilla::Options options;
+options.fontSizePoints = 10;
+options.visualIndentationWidth = 2;
+options.theme = fb2k::isDarkMode() ? footilla::Theme::Dark : footilla::Theme::Light;
+```
+
+Pass these options to `Editor::Create`; set `readOnly` for inherited formats.
+Use `SetFont()` for later font changes. `Handle()` is the wrapper used for layout,
+control identity, and change notifications. `ScintillaHandle()` is the actual
+input window; target it when attaching a hover tooltip or other input-specific
+behavior. Use `Focus()` rather than treating the wrapper as a Windows EDIT.
+
+### Connect changes, previews, Apply, and Reset
+
+Footilla sends `WM_COMMAND` with `EN_CHANGE`, the original control ID in
+`LOWORD(wParam)`, and the wrapper HWND in `lParam`. A WTL dialog can retain its
+usual handler entry:
+
+```cpp
+COMMAND_HANDLER_EX(IDC_FORMAT, EN_CHANGE, OnFormatChange)
+```
+
+Read the expression through `editor_.GetText()`, compile it with the plugin's
+existing `titleformat_compiler` path, refresh the preview, and notify the
+preferences callback with `on_state_changed()`. Keep evaluation in foobar2000:
+Footilla does not evaluate title-format scripts.
+
+**Change notifications are posted and coalesced, not synchronous EDIT events.**
+Apply/dirty-state queries should read the current editor text rather than rely
+only on a cache updated by `EN_CHANGE`. Likewise, after a programmatic Reset or
+an inherited-format update, compile/refresh immediately if the preview is needed
+before the notification is processed. The same consideration applies when
+another tab requests a compiled script.
+
+Do not use `uGetDlgItemText`, `uSetDlgItemText`, or `EM_SETREADONLY` on Footilla's
+wrapper. Use `GetText()`, `SetText()`, and `SetReadOnly()`. Preserve UTF-8 exactly:
+visual indentation adds no characters, and existing literal whitespace must not
+be trimmed before saving.
+
+For a "Same as Now Playing" option, save the independent expression before
+enabling inheritance, display the source editor's current expression, and make
+the dependent editor read-only. Restore the independent expression when
+inheritance is disabled. Do not save inherited text over the independent
+configuration or compare that inactive configuration against inherited text
+when determining the dirty state. Reset must update the text, inheritance flag,
+read-only state, and preview together.
+
+Avoid calling `SetText()` when the displayed text is already identical: it clears
+undo history and can reset caret/scroll state. `SetText()` can update a read-only
+editor without making it editable. `SetExtraFields({"datetime"})` adds suggestions
+for a plugin-defined field; the plugin must still supply its evaluation hook.
+
+### Bridge foobar2000 theme changes
+
+Set the initial palette from `fb2k::isDarkMode()`. For live changes, retain
+`fb2k::CDarkModeHooks` as a dialog member and provide a plugin-side subclass of
+Footilla's **wrapper** that understands `DarkMode::msgSetDarkMode()`:
+
+| `wParam` | Bridge behavior |
+| --- | --- |
+| `-1` | Return `1` to report support; do not change the theme. |
+| `0` | Apply `Theme::Light` and return `1`. |
+| `1` | Apply `Theme::Dark` and return `1`. |
+
+The SDK's `AddDialogWithControls` probes controls with that message and registers
+supported controls for later updates. This avoids treating Footilla as a standard
+EDIT. If theming native scrollbars too, apply `SetWindowTheme` to
+`ScintillaHandle()` with `Explorer` or `DarkMode_Explorer`, and check the HRESULT.
+Changing the Footilla palette alone does not theme native Windows scrollbars.
+
+Use `DefSubclassProc` for unhandled messages, remove your subclass on
+`WM_NCDESTROY`, and keep the adapter alive until its window is destroyed.
+Do not allow C++ exceptions to escape the callback. Clear dialog-owned theme
+registrations when their windows are destroyed: the SDK stores HWNDs, so old
+registrations cannot be reused for replacement controls. Reapply discovery to
+new pages, but **do not shut down/reinitialize Scintilla to change themes**.
+
+### Exercise the full preferences lifecycle
+
+An editor that renders correctly once is not sufficient coverage. In addition
+to text round-trips, test the complete nested dialog hierarchy through
+`IsDialogMessage`, moving focus between a default button, the Scintilla input,
+and the next field. Bound navigation tests with a timeout so a traversal loop
+cannot hang the test runner.
+
+Open and close/recreate all editor-owning pages repeatedly, including after
+light/dark switches. Verify that actual `ListBoxX` and `CallTip` windows are
+created and visible, and that a completion can be accepted. Checking only
+`SCI_AUTOCACTIVE` or the main editor's appearance can miss failed popup creation.
+Also cover inherited-format restoration, Reset, Apply before queued changes
+are delivered, and both immediate and deferred component shutdown.
 
 ## Source and redistribution
 
