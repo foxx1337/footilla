@@ -1,3 +1,7 @@
+# Output variables:
+#  FOOTILLA_SCINTILLA_DIR, pointing to projet_root/Scintilla
+
+
 get_filename_component(FOOTILLA_SCINTILLA_DIR "${CMAKE_CURRENT_LIST_DIR}/../Scintilla" ABSOLUTE)
 
 # Mirrors win32/scintilla.mak's static COMPONENT_OBJS. Deliberately excludes

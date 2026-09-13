@@ -30,7 +30,7 @@ From this project's directory, using PowerShell:
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64 `
-  -DFOOTILLA_WTL_DIR="C:\src\c\WTL10"
+  -Dwtl="C:\src\c\WTL10"
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 .\build\Release\footilla_demo.exe
@@ -44,8 +44,8 @@ the same architecture and MSVC runtime. The project respects
 The build always uses the repository's maintained Scintilla sources. It does
 not download sources, apply patches, or access a sibling SciTE installation.
 
-For the library alone, set `FOOTILLA_BUILD_DEMO=OFF` and
-`FOOTILLA_BUILD_TESTS=OFF`; WTL and ATL are then unnecessary.
+For the library alone, set `FOOTILLA_BUILD_DEMO=OFF`, `FOOTILLA_BUILD_TESTS=OFF`
+and `FOOTILLA_BUILD_FOO_TILLA=OFF`; WTL becomes then unnecessary.
 
 ## Playground
 

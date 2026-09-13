@@ -1,3 +1,10 @@
-/build*/
+
+# Visual Studio files
 /.vs/
+*.aps
+
+# CMake internals
 /CMakeUserPresets.json
+
+# CMake staging builds
+build*/
