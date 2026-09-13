@@ -11,12 +11,12 @@
 #include <utility>
 
 namespace footilla {
+HINSTANCE instance = nullptr;
+DWORD uiThread = 0;
 namespace {
 
 constexpr wchar_t WindowClass[] = L"Footilla.Editor";
 constexpr UINT ChangedMessage = WM_APP + 0x341;
-HINSTANCE instance = nullptr;
-DWORD uiThread = 0;
 unsigned int liveEditors = 0;
 
 bool IsUiThread() {
@@ -82,8 +82,11 @@ Editor::~Editor() {
 }
 
 bool Editor::Create(HWND parent, int controlId, const RECT& bounds, const Options& options) {
+    auto tid = GetWindowThreadProcessId(parent, nullptr);
+    auto isUi = IsUiThread();
+    auto isWindow = IsWindow(parent);
     if (!IsUiThread() || window_ || !IsWindow(parent) ||
-        GetWindowThreadProcessId(parent, nullptr) != uiThread ||
+        (uiThread != 0 && GetWindowThreadProcessId(parent, nullptr) != uiThread) ||
         controlId < 0 || controlId > 65535 ||
         options.fontSizePoints < 1 || options.fontSizePoints > 200 || options.visualIndentationWidth < 0) {
         SetLastError(ERROR_INVALID_PARAMETER);

@@ -2,8 +2,15 @@ add_library(
     foo_tilla SHARED
     main.cpp
     preferences.cpp
+    playground.cpp
     resource.h
     foo_tilla.rc
+)
+
+target_compile_definitions(
+    foo_tilla PRIVATE
+    _WIN32_WINNT=0x0A00
+    WINVER=0x0A00
 )
 
 target_link_libraries(
