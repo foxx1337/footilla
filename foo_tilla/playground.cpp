@@ -175,7 +175,10 @@ namespace
 
                 if (!runtime_initialized)
                 {
-                    footilla::Initialize(core_api::get_my_instance());
+                    if (!footilla::Initialize(core_api::get_my_instance()))
+                    {
+                        console::printf("foo_tilla: Failed to initialize Footilla. Assuming initialized.");
+                    }
                     runtime_initialized = true;
                 }
 
