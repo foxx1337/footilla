@@ -11,13 +11,14 @@
 #include <utility>
 
 namespace footilla {
-HINSTANCE instance = nullptr;
-DWORD uiThread = 0;
 namespace {
 
 constexpr wchar_t WindowClass[] = L"Footilla.Editor";
 constexpr UINT ChangedMessage = WM_APP + 0x341;
 unsigned int liveEditors = 0;
+HINSTANCE instance = nullptr;
+DWORD uiThread = 0;
+
 
 bool IsUiThread() {
     return instance && GetCurrentThreadId() == uiThread;
@@ -51,11 +52,11 @@ bool Initialize(HINSTANCE module) {
         SetLastError(ERROR_DLL_INIT_FAILED);
         return false;
     }
+    instance = module;
+    uiThread = GetCurrentThreadId();
     if (!Scintilla_RegisterClasses(module)) {
         return false;
     }
-    instance = module;
-    uiThread = GetCurrentThreadId();
     return true;
 }
 
