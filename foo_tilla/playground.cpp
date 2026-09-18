@@ -42,12 +42,13 @@ namespace
 
     bool runtime_initialized = false;
 
-    class FootilaPlayground : public ui_element_instance, public CWindowImpl<FootilaPlayground>, public CMessageFilter {
+    class FootilaPlayground : public ui_element_instance, public CWindowImpl<FootilaPlayground>, public message_filter_impl_base
+    {
     public:
         DECLARE_WND_CLASS_EX(L"foo_tilla.FootilaPlayground", CS_HREDRAW | CS_VREDRAW, COLOR_WINDOW)
 
         FootilaPlayground(ui_element_config::ptr config, ui_element_instance_callback_ptr p_callback)
-            : m_config(config) ,m_callback(p_callback)
+            : message_filter_impl_base(WM_KEYFIRST, WM_KEYLAST), m_config(config), m_callback(p_callback)
         {}
 
         HWND get_wnd() override
@@ -65,8 +66,22 @@ namespace
             return m_config;
         }
 
-        BOOL PreTranslateMessage(MSG* message) override {
-            return IsDialogMessage(message);
+        bool pretranslate_message(MSG* message) override
+        {
+            if (message->message < WM_KEYFIRST || message->message > WM_KEYLAST ||
+                (message->hwnd != m_hWnd && !IsChild(message->hwnd)))
+            {
+                return false;
+            }
+
+            if (IsDialogMessage(message))
+            {
+                return true;
+            }
+
+            TranslateMessage(message);
+            DispatchMessage(message);
+            return true;
         }
 
         BEGIN_MSG_MAP(MainWindow)
@@ -88,7 +103,6 @@ namespace
             {0x390efbe0, 0x51cd, 0x48c9, { 0x84, 0x39, 0xf7, 0x77, 0xd, 0xf6, 0x25, 0x30}};
 
             return guid;
-
         }
         static GUID g_get_subclass() { return ui_element_subclass_utility; }
         static void g_get_name(pfc::string_base& out) { out = "Footilla Playground"; }
@@ -105,7 +119,8 @@ namespace
 
         int Scale(int size) const { return MulDiv(size, static_cast<int>(dpi_), 96); }
 
-        void UpdateFont() {
+        void UpdateFont()
+        {
             const HFONT old = font_;
             font_ = CreateFontW(-Scale(14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -295,5 +310,4 @@ namespace
     class ui_element_playgroundimpl : public ui_element_impl_withpopup<FootilaPlayground> {};
 
     static service_factory_single_t<ui_element_playgroundimpl> g_ui_element_playgroundimpl_factory;
-
 }
