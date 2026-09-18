@@ -30,7 +30,7 @@ From this project's directory, using PowerShell:
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64 `
-  -Dwtl="C:\src\c\WTL10"
+  -Dwtl="C:\src\c\WTL10" -Dfoobar2000sdk="C:\src\c\foobar2000\sdk"
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 .\build\Release\footilla_demo.exe
